@@ -71,7 +71,8 @@ func TestAddAndBuild(t *testing.T) {
 		want          []*scpb.Operation
 	}{
 		{
-			name: "int64_sum_values_(CUMULATIVE)",
+			name:          "int64_sum_values_(CUMULATIVE)",
+			operationTags: []tag.Key{},
 			viewData: []*view.Data{
 				{
 					View: int64SumView,
@@ -140,7 +141,8 @@ func TestAddAndBuild(t *testing.T) {
 			},
 		},
 		{
-			name: "float64_sum_values_(CUMULATIVE)",
+			name:          "float64_sum_values_(CUMULATIVE)",
+			operationTags: []tag.Key{},
 			viewData: []*view.Data{
 				{
 					View: float64SumView,
@@ -195,7 +197,8 @@ func TestAddAndBuild(t *testing.T) {
 			},
 		},
 		{
-			name: "int64_lastValue_values_(GAUGE)",
+			name:          "int64_lastValue_values_(GAUGE)",
+			operationTags: []tag.Key{},
 			viewData: []*view.Data{
 				{
 					View: int64LastValueView,
@@ -264,7 +267,8 @@ func TestAddAndBuild(t *testing.T) {
 			},
 		},
 		{
-			name: "float64_lastValue_values_(GAUGE)",
+			name:          "float64_lastValue_values_(GAUGE)",
+			operationTags: []tag.Key{},
 			viewData: []*view.Data{
 				{
 					View: float64LastValueView,
@@ -480,6 +484,85 @@ func TestAddAndBuild(t *testing.T) {
 					Labels: map[string]string{
 						"common-label": "common-label-value",
 						"label2":       "shared-value",
+					},
+					MetricValueSets: []*scpb.MetricValueSet{
+						{
+							MetricName: "testservice.com/request_count",
+							MetricValues: []*scpb.MetricValue{
+								{
+									StartTime: &timestamppb.Timestamp{
+										Seconds: 1567509370,
+									},
+									EndTime: &timestamppb.Timestamp{
+										Seconds: 1567509371,
+									},
+									Value: &scpb.MetricValue_Int64Value{
+										Int64Value: 13,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			// The metrics tags are used to set the operation labels if there the operationTag is nil.
+			name: "nil_operation_tags",
+			viewData: []*view.Data{
+				{
+					View: int64SumView,
+					Rows: []*view.Row{
+						{
+							Tags: []tag.Tag{
+								tag.Tag{Key: labelTag1, Value: "label1-value1"},
+								tag.Tag{Key: labelTag2, Value: "label2-value1"}},
+							Data: &view.SumData{Value: 10},
+						},
+						{
+							Tags: []tag.Tag{
+								tag.Tag{Key: labelTag1, Value: "label1-value2"},
+								tag.Tag{Key: labelTag2, Value: "label2-value1"}},
+							Data: &view.SumData{Value: 13},
+						},
+					},
+					Start: start,
+					End:   start.Add(time.Second),
+				},
+			},
+			want: []*scpb.Operation{
+				{
+					OperationName: "OpenCensus Reported Metrics",
+					Labels: map[string]string{
+						"common-label": "common-label-value",
+						"label1":       "label1-value1",
+						"label2":       "label2-value1",
+					},
+					MetricValueSets: []*scpb.MetricValueSet{
+						{
+							MetricName: "testservice.com/request_count",
+							MetricValues: []*scpb.MetricValue{
+								{
+									StartTime: &timestamppb.Timestamp{
+										Seconds: 1567509370,
+									},
+									EndTime: &timestamppb.Timestamp{
+										Seconds: 1567509371,
+									},
+									Value: &scpb.MetricValue_Int64Value{
+										Int64Value: 10,
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					OperationName: "OpenCensus Reported Metrics",
+					Labels: map[string]string{
+						"common-label": "common-label-value",
+						"label1":       "label1-value2",
+						"label2":       "label2-value1",
 					},
 					MetricValueSets: []*scpb.MetricValueSet{
 						{

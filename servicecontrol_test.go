@@ -48,7 +48,7 @@ func TestNewExporterServiceNameValidationErrors(t *testing.T) {
 
 }
 
-func TestExportView(t *testing.T) {
+func TestExportViews(t *testing.T) {
 	start, err := time.Parse(time.RFC3339, "2019-09-03T11:16:10Z")
 	if err != nil {
 		t.Fatalf("Cannot set the start time: %v", err)
@@ -56,42 +56,35 @@ func TestExportView(t *testing.T) {
 	labelTag1 := tag.MustNewKey("label1")
 	labelTag2 := tag.MustNewKey("label2")
 
-	testWrapper(t, Options{
-		ConsumerProjectID: "test-consumer-project",
-		ServiceConfigID:   "first_config",
-		CommonLabels: map[string]string{
-			"cloud.googleapis.com/location": "us-west",
-			"cloud.googleapis.com/uid":      "test-instance",
-		},
-	}, func(f *fixture, e *Exporter) {
-		e.ExportView(&view.Data{
-			View: requestCountView([]tag.Key{labelTag1, labelTag2}),
-			Rows: []*view.Row{
-				{
-					Tags: []tag.Tag{
-						tag.Tag{Key: labelTag1, Value: "label1-value1"},
-						tag.Tag{Key: labelTag2, Value: "label2-value1"}},
-					Data: &view.SumData{Value: 10},
+	tests := []struct {
+		name             string
+		operationTagKeys []tag.Key
+		viewData         *view.Data
+		want             []*scpb.Operation
+	}{
+		{
+			name:             "empty_operation_tag_keys",
+			operationTagKeys: []tag.Key{},
+			viewData: &view.Data{
+				View: requestCountView([]tag.Key{labelTag1, labelTag2}),
+				Rows: []*view.Row{
+					{
+						Tags: []tag.Tag{
+							tag.Tag{Key: labelTag1, Value: "label1-value1"},
+							tag.Tag{Key: labelTag2, Value: "label2-value1"}},
+						Data: &view.SumData{Value: 10},
+					},
+					{
+						Tags: []tag.Tag{
+							tag.Tag{Key: labelTag1, Value: "label1-value2"},
+							tag.Tag{Key: labelTag2, Value: "label2-value1"}},
+						Data: &view.SumData{Value: 13},
+					},
 				},
-				{
-					Tags: []tag.Tag{
-						tag.Tag{Key: labelTag1, Value: "label1-value2"},
-						tag.Tag{Key: labelTag2, Value: "label2-value1"}},
-					Data: &view.SumData{Value: 13},
-				},
+				Start: start,
+				End:   start.Add(time.Second),
 			},
-			Start: start,
-			End:   start.Add(time.Second),
-		})
-		req, timeout := f.waitForReportRequest()
-		if timeout {
-			t.Fatalf("wait for report request timeout got: %v, want: false", timeout)
-		}
-
-		want := &scpb.ReportRequest{
-			ServiceName:     "testservice.googleapis.com",
-			ServiceConfigId: "first_config",
-			Operations: []*scpb.Operation{
+			want: []*scpb.Operation{
 				{
 					OperationName: "OpenCensus Reported Metrics",
 					ConsumerId:    "project:test-consumer-project",
@@ -138,21 +131,211 @@ func TestExportView(t *testing.T) {
 					},
 				},
 			},
-		}
+		},
+		{
+			name: "no_operation_tag_keys",
+			viewData: &view.Data{
+				View: requestCountView([]tag.Key{labelTag1, labelTag2}),
+				Rows: []*view.Row{
+					{
+						Tags: []tag.Tag{
+							tag.Tag{Key: labelTag1, Value: "label1-value1"},
+							tag.Tag{Key: labelTag2, Value: "label2-value1"}},
+						Data: &view.SumData{Value: 10},
+					},
+					{
+						Tags: []tag.Tag{
+							tag.Tag{Key: labelTag1, Value: "label1-value2"},
+							tag.Tag{Key: labelTag2, Value: "label2-value1"}},
+						Data: &view.SumData{Value: 13},
+					},
+				},
+				Start: start,
+				End:   start.Add(time.Second),
+			},
+			want: []*scpb.Operation{
+				{
+					OperationName: "OpenCensus Reported Metrics",
+					ConsumerId:    "project:test-consumer-project",
+					Labels: map[string]string{
+						"cloud.googleapis.com/location": "us-west",
+						"cloud.googleapis.com/uid":      "test-instance",
+						"label1":                        "label1-value1",
+						"label2":                        "label2-value1",
+					},
+					MetricValueSets: []*scpb.MetricValueSet{
+						{
+							MetricName: "testservice.googleapis.com/request_count",
+							MetricValues: []*scpb.MetricValue{
+								{
+									StartTime: &timestamppb.Timestamp{
+										Seconds: 1567509370,
+									},
+									EndTime: &timestamppb.Timestamp{
+										Seconds: 1567509371,
+									},
+									Value: &scpb.MetricValue_Int64Value{
+										Int64Value: 10,
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					OperationName: "OpenCensus Reported Metrics",
+					ConsumerId:    "project:test-consumer-project",
+					Labels: map[string]string{
+						"cloud.googleapis.com/location": "us-west",
+						"cloud.googleapis.com/uid":      "test-instance",
+						"label1":                        "label1-value2",
+						"label2":                        "label2-value1",
+					},
+					MetricValueSets: []*scpb.MetricValueSet{
+						{
+							MetricName: "testservice.googleapis.com/request_count",
+							MetricValues: []*scpb.MetricValue{
+								{
+									StartTime: &timestamppb.Timestamp{
+										Seconds: 1567509370,
+									},
+									EndTime: &timestamppb.Timestamp{
+										Seconds: 1567509371,
+									},
+									Value: &scpb.MetricValue_Int64Value{
+										Int64Value: 13,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:             "operation_tag_keys",
+			operationTagKeys: []tag.Key{labelTag1},
+			viewData: &view.Data{
+				View: requestCountView([]tag.Key{labelTag1, labelTag2}),
+				Rows: []*view.Row{
+					{
+						Tags: []tag.Tag{
+							tag.Tag{Key: labelTag1, Value: "label1-value1"},
+							tag.Tag{Key: labelTag2, Value: "label2-value1"}},
+						Data: &view.SumData{Value: 10},
+					},
+					{
+						Tags: []tag.Tag{
+							tag.Tag{Key: labelTag1, Value: "label1-value2"},
+							tag.Tag{Key: labelTag2, Value: "label2-value1"}},
+						Data: &view.SumData{Value: 13},
+					},
+				},
+				Start: start,
+				End:   start.Add(time.Second),
+			},
+			want: []*scpb.Operation{
+				{
+					OperationName: "OpenCensus Reported Metrics",
+					ConsumerId:    "project:test-consumer-project",
+					Labels: map[string]string{
+						"cloud.googleapis.com/location": "us-west",
+						"cloud.googleapis.com/uid":      "test-instance",
+						"label1":                        "label1-value1",
+					},
+					MetricValueSets: []*scpb.MetricValueSet{
+						{
+							MetricName: "testservice.googleapis.com/request_count",
+							MetricValues: []*scpb.MetricValue{
+								{
+									Labels: map[string]string{
+										"label2": "label2-value1",
+									},
+									StartTime: &timestamppb.Timestamp{
+										Seconds: 1567509370,
+									},
+									EndTime: &timestamppb.Timestamp{
+										Seconds: 1567509371,
+									},
+									Value: &scpb.MetricValue_Int64Value{
+										Int64Value: 10,
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					OperationName: "OpenCensus Reported Metrics",
+					ConsumerId:    "project:test-consumer-project",
+					Labels: map[string]string{
+						"cloud.googleapis.com/location": "us-west",
+						"cloud.googleapis.com/uid":      "test-instance",
+						"label1":                        "label1-value2",
+					},
+					MetricValueSets: []*scpb.MetricValueSet{
+						{
+							MetricName: "testservice.googleapis.com/request_count",
+							MetricValues: []*scpb.MetricValue{
+								{
+									Labels: map[string]string{
+										"label2": "label2-value1",
+									},
+									StartTime: &timestamppb.Timestamp{
+										Seconds: 1567509370,
+									},
+									EndTime: &timestamppb.Timestamp{
+										Seconds: 1567509371,
+									},
+									Value: &scpb.MetricValue_Int64Value{
+										Int64Value: 13,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testWrapper(t, Options{
+				ConsumerProjectID: "test-consumer-project",
+				ServiceConfigID:   "first_config",
+				CommonLabels: map[string]string{
+					"cloud.googleapis.com/location": "us-west",
+					"cloud.googleapis.com/uid":      "test-instance",
+				},
+				OperationTagKeys: tt.operationTagKeys,
+			}, func(f *fixture, e *Exporter) {
+				e.ExportView(tt.viewData)
+				req, timeout := f.waitForReportRequest()
+				if timeout {
+					t.Fatalf("wait for report request timeout got: %v, want: false", timeout)
+				}
 
-		ingoreOperationFields := cmpopts.IgnoreFields(scpb.Operation{}, "StartTime", "EndTime", "OperationId")
-		if diff := cmp.Diff(req, want, ingoreOperationFields); diff != "" {
-			t.Errorf("Request diff (want -> got): %s", diff)
-		}
-		for _, op := range req.GetOperations() {
-			if diff := cmp.Diff(op.StartTime, op.EndTime); diff != "" {
-				t.Errorf("start_time should equal end_time (want -> got): %s", diff)
-			}
-			if op.OperationId == "" {
-				t.Errorf("invalid operation id, got: %v, want not empty", op.OperationId)
-			}
-		}
-	})
+				want := &scpb.ReportRequest{
+					ServiceName:     "testservice.googleapis.com",
+					ServiceConfigId: "first_config",
+					Operations:      tt.want,
+				}
+
+				ingoreOperationFields := cmpopts.IgnoreFields(scpb.Operation{}, "StartTime", "EndTime", "OperationId")
+				if diff := cmp.Diff(req, want, ingoreOperationFields); diff != "" {
+					t.Errorf("Request diff (want -> got): %s", diff)
+				}
+				for _, op := range req.GetOperations() {
+					if diff := cmp.Diff(op.StartTime, op.EndTime); diff != "" {
+						t.Errorf("start_time should equal end_time (want -> got): %s", diff)
+					}
+					if op.OperationId == "" {
+						t.Errorf("invalid operation id, got: %v, want not empty", op.OperationId)
+					}
+				}
+			})
+		})
+	}
 }
 
 func TestExportViewDataWithNoRows(t *testing.T) {

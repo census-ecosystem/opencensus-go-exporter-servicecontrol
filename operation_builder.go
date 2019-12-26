@@ -40,6 +40,7 @@ type OperationBuilder struct {
 	// These should include the tags associated with monitored resource labels.
 	// Any tag not in this set will be serialized into the
 	// Operation.metric_value_sets.metric_values.labels field.
+	// If nil, all tag will be serialized into the Operation.labels.
 	commonTagKeyNames map[string]bool
 
 	// The key is the "signature" of the operation tags (operationInstanceBuilder.operationTags)
@@ -55,9 +56,12 @@ const (
 
 // NewOperationBuilder returns an OperationBuilder instance.
 func NewOperationBuilder(operationTagKey []tag.Key, labelValues map[string]string) *OperationBuilder {
-	commonTagKeyNames := make(map[string]bool)
-	for _, k := range operationTagKey {
-		commonTagKeyNames[k.Name()] = true
+	var commonTagKeyNames map[string]bool = nil
+	if operationTagKey != nil {
+		commonTagKeyNames = make(map[string]bool)
+		for _, k := range operationTagKey {
+			commonTagKeyNames[k.Name()] = true
+		}
 	}
 	return &OperationBuilder{
 		commonLabelValues:                      labelValues,
@@ -82,7 +86,9 @@ func (b *OperationBuilder) Add(vd *view.Data) error {
 		var operationTags []tag.Tag
 		var valueTags []tag.Tag
 		for _, t := range r.Tags {
-			if b.commonTagKeyNames[t.Key.Name()] {
+			// If the commonTagNames are not specified, convert any tag to an
+			// Operation label.
+			if b.commonTagKeyNames == nil || b.commonTagKeyNames[t.Key.Name()] {
 				operationTags = append(operationTags, t)
 			} else {
 				valueTags = append(valueTags, t)

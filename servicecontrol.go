@@ -73,6 +73,8 @@ type Options struct {
 	// These tags will be converted into Operation level labels. Any monitored
 	// resource label to should be added to this list. It can also be used for
 	// labels that are shared across metrics.
+	// If not set, all tags will be converted to Operation level labels. This
+	// may increase the number of Operation instances in the Report request.
 	OperationTagKeys []tag.Key
 
 	// OnError is a hook to be called when there is an error uploading the metrics.

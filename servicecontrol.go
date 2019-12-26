@@ -64,14 +64,11 @@ type Options struct {
 	// (see https://cloud.google.com/service-infrastructure/docs/service-management/reference/rest/v1/services.configs?hl=ca#Service)
 	ServiceConfigID string
 
-	// UIDLabel identifies the current lifetime of the "task" generating the metrics.
-	// If not set it will default to a unique value generated when the exporter
-	// is created (e.g. UUID).
-	//
-	// The value is used to populate the 'cloud.googleapis.com/uid' label value.
-	// The ReportRequest-s containing NoAggregationMetricPrefixes will not include
-	// this label.
-	UIDLabel string
+	// Labels and their values that will be reported to the ServiceController on each
+	// request.
+	// These should be used to set the labels values that are fixed during the program
+	// execution. Examples: 'cloud.googleapis.com/location' or 'cloud.googleapis.com/uid'.
+	CommonLabels map[string]string
 
 	// These tags will be converted into Operation level labels. Any monitored
 	// resource label to should be added to this list. It can also be used for
@@ -96,8 +93,6 @@ type Exporter struct {
 
 	o Options
 
-	commonLabels map[string]string
-
 	scClient scpb.ServiceControllerClient
 
 	viewDataBundler *bundler.Bundler
@@ -108,29 +103,13 @@ type Exporter struct {
 //
 // `service` is the name of the managed service as indicated in the
 // service configuration (e.g. pubsub.googleapis.com).
-//
-// `location` is the identifier of the GCP cloud region/zone in which the data
-// for a resource is stored. If not set, it will default to the location
-// provided by the metadata server. Its value is used to populate the
-// 'cloud.googleapis.com/location' label value.
-func NewExporter(service, location string, o Options) (*Exporter, error) {
+func NewExporter(service string, o Options) (*Exporter, error) {
 	if strings.TrimSpace(service) == "" {
 		return nil, errors.New("service must not be empty")
-	}
-	if strings.TrimSpace(location) == "" {
-		return nil, errors.New("location must not be empty")
-	}
-	uid := o.UIDLabel
-	if uid == "" {
-		uid = uuid.New().String()
 	}
 	e := &Exporter{
 		service: service,
 		o:       o,
-		commonLabels: map[string]string{
-			"cloud.googleapis.com/location": location,
-			"cloud.googleapis.com/uid":      uid,
-		},
 	}
 	conn, err := o.clientConn()
 	if err != nil {
@@ -155,7 +134,7 @@ func (e *Exporter) ExportView(vd *view.Data) {
 }
 
 func (e *Exporter) handleViewData(vds ...*view.Data) {
-	opbuilder := NewOperationBuilder(e.o.OperationTagKeys, e.commonLabels)
+	opbuilder := NewOperationBuilder(e.o.OperationTagKeys, e.o.CommonLabels)
 	for _, vd := range vds {
 		if err := opbuilder.Add(vd); err != nil {
 			e.o.handleError(fmt.Errorf("cannot add view.Data %v: %w", vd, err))

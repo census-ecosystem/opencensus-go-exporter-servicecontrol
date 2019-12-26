@@ -77,12 +77,14 @@ type Options struct {
 	// may increase the number of Operation instances in the Report request.
 	OperationTagKeys []tag.Key
 
+	// Context allows you to provide a custom context for the ServiceController API calls.
+	//
+	// If unset, context.Background() will be used.
+	Context context.Context
+
 	// OnError is a hook to be called when there is an error uploading the metrics.
 	// If no set, the errors are logged.
 	OnError func(err error)
-
-	// TODO(b/137286316): Add a "Options.Context context.Context" field similar to
-	// the one in the OpenCensus Stackdriver Exporter.
 
 	// serviceControlClientConn is used by tests to override the ServiceController
 	// service endpoint.
@@ -163,12 +165,15 @@ func (e *Exporter) handleViewData(vds ...*view.Data) {
 		ServiceConfigId: e.o.ServiceConfigID,
 	}
 
-	// context.Background() is used because this RPC is issued when the OpenCensus
-	// decides to flush the metric data. This is done asynchronously from the
-	// client code (e.g. a gRpc service method implementation that reports
-	// measurements to be exported to ServiceController).
-	// TODO(b/137286316): Allow the client to override this Context.
-	resp, err := e.scClient.Report(context.Background(), req)
+	ctx := e.o.Context
+	if ctx == nil  {
+		// context.Background() is used because this RPC is issued when the OpenCensus
+		// decides to flush the metric data. This is done asynchronously from the
+		// client code (e.g. a gRpc service method implementation that reports
+		// measurements to be exported to ServiceController).
+		ctx = context.Background()
+	}
+	resp, err := e.scClient.Report(ctx, req)
 	if err != nil {
 		e.o.handleError(err)
 		return
@@ -190,10 +195,11 @@ func (o Options) clientConn() (*grpc.ClientConn, error) {
 	if o.ServiceControlClientConn != nil {
 		return o.ServiceControlClientConn, nil
 	}
-	// TODO(b/137286316): Allow the client to override this Context.
-	// In most cases the exporter is created during the service statup so the
-	// context.Background() may be sufficient.
-	perRPC, err := oauth.NewApplicationDefault(context.Background(), "https://www.googleapis.com/auth/cloud-platform")
+	ctx := o.Context
+	if ctx == nil  {
+		ctx = context.Background()
+	}
+	perRPC, err := oauth.NewApplicationDefault(ctx, "https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create credentials: %w", err)
 	}

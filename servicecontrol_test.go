@@ -24,7 +24,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/google/uuid"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/tag"
@@ -36,35 +35,17 @@ import (
 	scpb "google.golang.org/genproto/googleapis/api/servicecontrol/v1"
 )
 
-func TestNewExporterValidationErrors(t *testing.T) {
-	tests := []struct {
-		service  string
-		location string
-		want     string
-	}{
-		{
-			service:  "   ",
-			location: "us-west",
-		},
-		{
-			service:  "test.googleapis.com",
-			location: "  ",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			_, err := NewExporter(
-				tt.service,
-				tt.location,
-				Options{
-					ConsumerProjectID: "test-consumer-project",
-					ServiceConfigID:   "first_config",
-				})
-			if err == nil {
-				t.Errorf("got no error, want error. Test: %v", tt)
-			}
+func TestNewExporterServiceNameValidationErrors(t *testing.T) {
+	_, err := NewExporter(
+		"   ",
+		Options{
+			ConsumerProjectID: "test-consumer-project",
+			ServiceConfigID:   "first_config",
 		})
+	if err == nil {
+		t.Error("got no error, want error.")
 	}
+
 }
 
 func TestExportView(t *testing.T) {
@@ -78,7 +59,10 @@ func TestExportView(t *testing.T) {
 	testWrapper(t, Options{
 		ConsumerProjectID: "test-consumer-project",
 		ServiceConfigID:   "first_config",
-		UIDLabel:          "test-instance",
+		CommonLabels: map[string]string{
+			"cloud.googleapis.com/location": "us-west",
+			"cloud.googleapis.com/uid":      "test-instance",
+		},
 	}, func(f *fixture, e *Exporter) {
 		e.ExportView(&view.Data{
 			View: requestCountView([]tag.Key{labelTag1, labelTag2}),
@@ -167,40 +151,6 @@ func TestExportView(t *testing.T) {
 			if op.OperationId == "" {
 				t.Errorf("invalid operation id, got: %v, want not empty", op.OperationId)
 			}
-		}
-	})
-}
-
-func TestAutoUidLabel(t *testing.T) {
-	// Force the uuid generator to always return "00000000-0000-4000-8000-000000000000".
-	uuid.SetRand(zeroReader{})
-	defer uuid.SetRand(nil)
-
-	testWrapper(t, Options{}, func(f *fixture, e *Exporter) {
-		viewData := &view.Data{
-			View: requestCountView([]tag.Key{}),
-			Rows: []*view.Row{
-				{
-					Tags: []tag.Tag{},
-					Data: &view.SumData{Value: 10},
-				},
-			},
-			Start: time.Now(),
-			End:   time.Now().Add(time.Second),
-		}
-		e.ExportView(viewData)
-
-		req, timeout := f.waitForReportRequest()
-		if timeout {
-			t.Fatalf("wait for report request timeout got: %v, want: false", timeout)
-		}
-		if len(req.Operations) != 1 {
-			t.Fatalf("invalid operation count got: %v want: 1", req.Operations)
-		}
-		wantUID := "00000000-0000-4000-8000-000000000000"
-		uid := req.Operations[0].Labels["cloud.googleapis.com/uid"]
-		if uid != wantUID {
-			t.Fatalf("invalid cloud.googleapis.com/uid label got: %v want: %v", uid, wantUID)
 		}
 	})
 }
@@ -388,7 +338,6 @@ func testWrapper(t *testing.T, o Options, test func(*fixture, *Exporter)) {
 	o.ServiceControlClientConn = f.clientConn
 	e, err := NewExporter(
 		"testservice.googleapis.com",
-		"us-west",
 		o)
 	if err != nil {
 		t.Fatal(err)
